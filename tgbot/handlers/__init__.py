@@ -22,7 +22,6 @@ from tgbot.handlers.commands import (
     help_cmd_handler,
     exit_cmd_handler,
     add_topic_handler,
-    add_new_user_handler,
     button_handler
 )
 
@@ -32,6 +31,5 @@ HANDLERS: tuple = (  # the order of the elements is important
     help_cmd_handler,
     exit_cmd_handler,
     add_topic_handler,
-    add_new_user_handler,
     button_handler
 )
