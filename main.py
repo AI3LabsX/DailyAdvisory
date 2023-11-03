@@ -4,6 +4,7 @@ from telegram.constants import ParseMode
 from telegram.ext import AIORateLimiter, Application, Defaults
 
 from tgbot.handlers import HANDLERS
+from tgbot.handlers.db_init import init_db
 from tgbot.handlers.errors import error_handler
 from tgbot.utils.bot_commands import set_default_commands
 from tgbot.utils.environment import env
@@ -25,6 +26,7 @@ def register_all_handlers(application: Application) -> None:
 
 
 def start_bot() -> None:
+    init_db()
     """Launches the bot"""
 
     # Create the Application and pass it your bot's token.

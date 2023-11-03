@@ -8,14 +8,15 @@ Note:
     Handlers are imported into the __init__.py package handlers,
     where a tuple of HANDLERS is assembled for further registration in the application
 """
+import asyncio
+from typing import Any
+
 import openai
 import tiktoken
-from langchain.chains import ConversationalRetrievalChain
-from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.retrievers import ContextualCompressionRetriever
-from langchain.retrievers.document_compressors import LLMChainExtractor
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.tools import Tool
+from langchain.utilities.google_search import GoogleSearchAPIWrapper
 from langchain.vectorstores import FAISS
 
 from tgbot.utils.environment import env
@@ -23,20 +24,69 @@ from tgbot.utils.environment import env
 openai.api_key = env.get_openai_api()
 
 
-async def get_user_data():
-    ...
+async def generate_category(topic, description, level):
+    prompt = f"Given the topic '{topic}', a short description '{description}', and the user's level '{level}', identify a specific category for advice."
+    category = await generate_completion(prompt)
+    return category.strip()
 
-async def generate_chat_completion():
+
+async def search_google_for_data(category, topic):
+    search_query = f"Recent developments in {category} related to {topic}"
+    search_results = await search_token(search_query)
+    return search_results
+
+
+async def generate_advice(user_data, google_data):
+    prompt = f"Create an advice based on ypu knowledge, the following user data: {user_data}, and the information gathered from the internet: {google_data}"
+    advice = await generate_chat_completion(prompt)
+    return advice
+
+
+async def create_advice(topic, description, level):
+    # Step 1: Generate a category from the topic
+    category = await generate_category(topic, description, level)
+
+    # Step 2: Google search for data about the category
+    google_data = await search_google_for_data(category, topic)
+
+    # Step 3: Generate advice using the GPT model
+    user_data = {
+        "topic": topic,
+        "description": description,
+        "level": level,
+        "category": category
+    }
+    advice = await generate_advice(user_data, google_data)
+
+    return advice
+
+
+async def search_token(prompt: str) -> Any:
+    search = GoogleSearchAPIWrapper()
+
+    tool = Tool(
+        name="Google Search",
+        description="Search Google for recent results.",
+        func=search.run,  # Synchronous method
+    )
+
+    # Run the synchronous code in a thread pool executor
+    return await asyncio.get_event_loop().run_in_executor(None, tool.run, prompt)
+
+
+async def generate_chat_completion(input_data):
     data = {
         "model": "gpt-3.5-turbo-16k",
         "messages": [
             {
                 "role": "system",
-                "content": f""
+                "content": "You will be given a task by user to create advices on some topic based on you train data "
+                           "and given google search data. You have to generate good structured advice text for "
+                           "telegram format. "
             },
             {
                 "role": "user",
-                "content": f""
+                "content": input_data
             }
         ],
         "temperature": 0,
@@ -55,11 +105,11 @@ async def generate_chat_completion():
 async def generate_completion(query: str) -> str:
     data = {
         "engine": "text-davinci-003",
-        "prompt": "",
+        "prompt": query,
         "temperature": 0,
         "max_tokens": 500,
         "top_p": 0,
-        "requency_penalty": 0.43,
+        "frequency_penalty": 0.43,
         "presence_penalty": 0.35,
         "best_of": 2
     }
@@ -142,5 +192,3 @@ def get_vectorstore(text_chunks: list[str]) -> FAISS:
     embeddings = OpenAIEmbeddings()
     vectorstore = FAISS.from_texts(texts=text_chunks, embedding=embeddings)
     return vectorstore
-
-

@@ -10,26 +10,30 @@ Note:
     Handlers are imported into the __init__.py package handlers,
     where a tuple of HANDLERS is assembled for further registration in the application
 """
+import asyncio
+
 # TODO: Do a data collection like in WeList bot
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackContext, CallbackQueryHandler, MessageHandler, filters
 
 from tgbot.config import BOT_LOGO
-from tgbot.handlers.io_tools import store_user_data
-from tgbot.handlers.messages import ask_question
+from tgbot.handlers.db_init import store_user_data, get_user_preferences
+from tgbot.handlers.messages import generate_chat_completion, create_advice
 from tgbot.utils.filters import is_admin_filter
 from tgbot.utils.templates import template
 
 # New questions and options
 USER_QUESTIONS = [
     "Which topic are you interested in?",
-    "How often do you need advice?",
+    "Can you give a brief description what what advices on that topic you want to get?",
+    "How often do you need advice per day?",
     "Which personality do you prefer for the bot?",
     "What's your current level on the chosen topic?"
 ]
 KEYS = [
     "NAME",
     "TOPIC",
+    "DESCRIPTION",
     "FREQUENCY",
     "PERSONA",
     "LEVEL"
@@ -42,9 +46,8 @@ TOPIC_OPTIONS = [
 ]
 
 ADVICE_FREQUENCY_OPTIONS = [
-    ["Once an hour", "Once a day"],
-    ["3 times a day", "Once a week"],
-    ["Other"]
+    ["1", "2"],
+    ["3", "4"],
 ]
 
 PERSONALITY_OPTIONS = [
@@ -57,7 +60,7 @@ LEVEL_OPTIONS = [
 # Mapping questions to their options
 QUESTION_OPTIONS = {
     "Which topic are you interested in?": TOPIC_OPTIONS,
-    "How often do you need advice?": ADVICE_FREQUENCY_OPTIONS,
+    "How often do you need advice per day?": ADVICE_FREQUENCY_OPTIONS,
     "Which personality do you prefer for the bot?": PERSONALITY_OPTIONS,
     "What's your current level on the chosen topic?": LEVEL_OPTIONS
 }
@@ -200,7 +203,6 @@ async def send_question(update: Update, context: CallbackContext) -> None:
 
     # Get the current question index from context.user_data or initialize it to 0
 
-
     editing_key = context.user_data.get("editing_key", None)
     if editing_key:
         # Store the edited value
@@ -221,6 +223,7 @@ async def send_question(update: Update, context: CallbackContext) -> None:
     if question_index < len(USER_QUESTIONS):
         current_question = USER_QUESTIONS[question_index]
         options = QUESTION_OPTIONS.get(current_question)
+        print(options)
         if options:
             keyboard = ReplyKeyboardMarkup(
                 options, one_time_keyboard=True, resize_keyboard=True
@@ -242,6 +245,34 @@ async def send_question(update: Update, context: CallbackContext) -> None:
         await context.bot.send_message(chat_id=chat_id, text="Thank you for answering all the questions!")
 
 
+async def send_advice(context, chat_id, user_id):
+    """
+    Sends advice to the user based on the frequency.
+    """
+    user_preferences = get_user_preferences(user_id)
+    if not user_preferences:
+        # Assuming you have a way to send messages, replace with your method
+        await context.bot.send_message(chat_id, "Could not retrieve your preferences.")
+        return
+
+    frequency = int(user_preferences['FREQUENCY'])
+    interval = 24 * 3600 / frequency  # Convert frequency to interval in seconds
+
+    # Send the first piece of advice immediately
+    advice = await create_advice(user_preferences["TOPIC"], user_preferences["DESCRIPTION"], user_preferences["LEVEL"])
+    await context.bot.send_message(chat_id, f"Here's your advice!\n{advice}")
+
+    # Then start the loop to send advice at regular intervals
+    while True:
+        # Wait for the next advice based on frequency
+        await asyncio.sleep(interval)
+
+        # Generate and send the next piece of advice
+        advice = await create_advice(user_preferences["TOPIC"], user_preferences["DESCRIPTION"],
+                                     user_preferences["LEVEL"])
+        await context.bot.send_message(chat_id, f"Here's your advice!\n{advice}")
+
+
 async def get_data_from_user(update, context):
     chat_id = (
         update.message.chat_id
@@ -250,17 +281,23 @@ async def get_data_from_user(update, context):
     )
     user_id = update.message.from_user.id if update.message else update.callback_query.from_user.id
     data = context.user_data['data']
-
+    print(data)
     # Store data in the database
-    # store_user_data(user_id, data)
+    store_user_data(user_id, data)
+    #
+    # # Start the advice loop
+    asyncio.create_task(send_advice(context, chat_id, user_id))
 
     # Send a message to the user with further instructions
     message = (
-        f"Now, advices will come to you with frequency: {data['FREQUENCY']}.\n"
-        "To ask a question about the topic, use command `/ask`.\n"
-        "To get a random advice from the topic, use command `/advice`."
+        f"Now, advice will come to you with a frequency of {data['FREQUENCY']} times per day.\n"
+        "To ask a question about the topic, use the command `/ask`.\n"
+        "To get a random piece of advice on the topic, use the command `/advice`."
     )
-    await context.bot.send_message(chat_id=chat_id, text=message)
+    await context.bot.send_message(chat_id, message)
+
+    # Set the conversation state to 'qa_conv'
+    context.user_data["conversation_state"] = "qa_conv"
 
 
 async def add_topic(update: Update, context: CallbackContext) -> None:
@@ -288,7 +325,6 @@ async def add_topic(update: Update, context: CallbackContext) -> None:
     # Always answer the callback query to prevent the "loading" animation on the button
 
 
-
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handles command /help from the user
@@ -314,6 +350,32 @@ async def exit_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await start_cmd_from_user(update, context)
 
 
+async def qa_conversation_handler(update: Update, context: CallbackContext) -> None:
+    """
+    Handles the QA conversation state, generating responses using GPT.
+    """
+    chat_id = update.message.chat_id
+    user_message = update.message.text
+
+    # Check if the user wants to exit the conversation
+    if user_message.lower() == "/exit":
+        await exit_chat(update, context)
+        return
+
+    # Check if the conversation state is 'qa_conv'
+    if context.user_data.get('conversation_state') == 'qa_conv':
+        # Generate a response using GPT
+        context.user_data.setdefault('chat_history', []).append({"role": "user", "content": user_message})
+        response = await generate_chat_completion(context.user_data['data'])
+        context.user_data['chat_history'].append({"role": "assistant", "content": response})
+
+        # Send the response to the user
+        await context.bot.send_message(chat_id=chat_id, text=response)
+    else:
+        # If the state is not 'qa_conv', do not handle the message here
+        return
+
+
 # Creating handlers
 start_cmd_from_admin_handler: CommandHandler = CommandHandler(
     command="start", callback=start_cmd_from_admin, filters=is_admin_filter
@@ -327,3 +389,5 @@ button_handler: CallbackQueryHandler = CallbackQueryHandler(add_topic)
 add_topic_handler: MessageHandler = MessageHandler(
     filters.TEXT & ~filters.COMMAND, send_question
 )
+
+qa_conv_handler: MessageHandler = MessageHandler(filters.TEXT & ~filters.COMMAND, qa_conversation_handler)

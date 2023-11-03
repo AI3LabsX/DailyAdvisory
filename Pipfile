@@ -7,7 +7,6 @@ name = "pypi"
 pypdf2 = "*"
 environs = "==9.5.0"
 jinja2 = "*"
-python-telegram-bot = { version = "==20.6", extras = ["rate-limiter"] }
 langchain = "==0.0.319"
 openai = "==0.28.1"
 aiogram = "==3.1.1"
@@ -22,7 +21,7 @@ duckduckgo-search = "*"
 sendgrid = "*"
 cloudscraper = "*"
 psycopg2 = "*"
-
+python-telegram-bot = {extras = ["job-queue"], version = "*"}
 
 [requires]
 python_version = "3.11"
