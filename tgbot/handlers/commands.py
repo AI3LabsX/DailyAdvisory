@@ -11,6 +11,7 @@ Note:
     where a tuple of HANDLERS is assembled for further registration in the application
 """
 import asyncio
+import time
 
 # TODO: Do a data collection like in WeList bot
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
@@ -18,7 +19,7 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackContext, Callback
 
 from tgbot.config import BOT_LOGO
 from tgbot.handlers.db_init import store_user_data, get_user_preferences
-from tgbot.handlers.messages import generate_chat_completion, create_advice
+from tgbot.handlers.messages import create_advice, generate_chat, get_conversation
 from tgbot.utils.filters import is_admin_filter
 from tgbot.utils.templates import template
 
@@ -68,29 +69,39 @@ QUESTION_OPTIONS = {
 
 async def start_cmd_from_admin(update: Update, context: CallbackContext) -> None:
     """Handles command /start from the user"""
+
+
+    user_id = update.message.from_user.id
     username: str = update.message.from_user.first_name
+
+    # Retrieve user preferences from the database
+    user_preferences = get_user_preferences(user_id)
 
     welcome_message = f"👋 Hello, {username if username else 'user'}! What would you like to do?"
 
-    # Check if the user has already added a topic (this is a placeholder, you'll need to check the database)
-    has_added_topic = False  # Placeholder, replace with actual check
+    if user_preferences:
+        # Store the user preferences in context.user_data['data']
+        context.user_data["data"] = user_preferences
+        summary = "\n".join(
+            [f"{key}: {context.user_data['data'].get(key, 'N/A')}" for key in KEYS]
+        )
 
-    if has_added_topic:
+        # User has already added a topic, so show the topic name and summary
+        topic_summary = f"Current Topic: {user_preferences['TOPIC']}\nDescription: {user_preferences['DESCRIPTION']}"
         buttons = [
-            [InlineKeyboardButton(text="Add Topic", callback_data="add_topic"),
-             InlineKeyboardButton(text="Advice", callback_data="advice"),
-             InlineKeyboardButton(text="QA", callback_data="qa")]
+            [InlineKeyboardButton(text=f"Edit Topic: {user_preferences['TOPIC']}", callback_data="edit_data")],
+            [InlineKeyboardButton(text="Confirm", callback_data="confirm_data")],
         ]
+        welcome_message += f"\n\n{topic_summary}\nHere's the summary of your data:\n\n{summary}"
     else:
+        # No topic added yet, show the Add Topic button
         buttons = [
             [InlineKeyboardButton(text="Add Topic", callback_data="add_topic")]
         ]
 
     keyboard = InlineKeyboardMarkup(buttons)
     await update.message.reply_text(text=welcome_message, reply_markup=keyboard)
-    # Set the conversation state to 'idle'
     context.user_data["conversation_state"] = "idle"
-
 
 # TODO: Adjust
 async def start_cmd_from_user(update: Update, context: CallbackContext) -> None:
@@ -200,6 +211,9 @@ async def send_question(update: Update, context: CallbackContext) -> None:
         if update.message
         else update.callback_query.message.chat_id
     )
+    if context.user_data.get("conversation_state") == "qa_conv":
+        await qa_conversation_handler(update, context)
+        return
 
     # Get the current question index from context.user_data or initialize it to 0
 
@@ -217,6 +231,7 @@ async def send_question(update: Update, context: CallbackContext) -> None:
     if (
             update.message
             and 0 <= question_index < len(KEYS)
+            and context.user_data["conversation_state"] == "topic"
     ):
         context.user_data["data"][KEYS[question_index]] = update.message.text
     # Check if we've asked all questions
@@ -236,7 +251,7 @@ async def send_question(update: Update, context: CallbackContext) -> None:
 
         # Increment the question index for the next question
         context.user_data[QUESTION_INDEX] = question_index + 1
-    elif question_index == len(USER_QUESTIONS):  # After the last question
+    elif question_index == len(USER_QUESTIONS):
         await display_summary(update, context)
         return
     else:
@@ -244,6 +259,40 @@ async def send_question(update: Update, context: CallbackContext) -> None:
         context.user_data[QUESTION_INDEX] = 0
         await context.bot.send_message(chat_id=chat_id, text="Thank you for answering all the questions!")
 
+async def qa_conversation_handler(update: Update, context: CallbackContext) -> None:
+    """
+    Handles the QA conversation state, generating responses using GPT.
+    """
+    chat_id = update.message.chat_id
+    user_id = update.message.from_user.id if update.message else update.callback_query.from_user.id
+    user_preferences = get_user_preferences(user_id)
+    user_message = update.message.text
+    if context.user_data.get("conversation_state") != "qa_conv":
+        return
+    # Check if the user wants to exit the conversation
+    if user_message.lower() == "/exit":
+        await exit_chat(update, context)
+        return
+    print(context.user_data.get('conversation_state'))
+    # Check if the conversation state is 'qa_conv'
+    if context.user_data.get('conversation_state') == 'qa_conv':
+        start = time.time()
+        # Generate a response using GPT
+        context.user_data.setdefault('chat_history', []).append({"role": "user", "content": user_message})
+        response = await get_conversation(user_preferences, user_message)
+        context.user_data['chat_history'].append({"role": "assistant", "content": response})
+
+        # Send the response to the user
+        await context.bot.send_message(chat_id=chat_id, text=response)
+        end = time.time()
+        print(end - start)
+    elif context.user_data.get('conversation_state') == 'idle':
+        pre_generated_message = "Please select an option from the menu to get started."
+        await context.bot.send_message(chat_id=chat_id, text=pre_generated_message)
+        return
+    else:
+        # If the state is not 'qa_conv', do not handle the message here
+        return
 
 async def send_advice(context, chat_id, user_id):
     """
@@ -282,6 +331,7 @@ async def get_data_from_user(update, context):
     user_id = update.message.from_user.id if update.message else update.callback_query.from_user.id
     data = context.user_data['data']
     print(data)
+    # Set the conversation state to 'qa_conv'
     # Store data in the database
     store_user_data(user_id, data)
     #
@@ -296,15 +346,13 @@ async def get_data_from_user(update, context):
     )
     await context.bot.send_message(chat_id, message)
 
-    # Set the conversation state to 'qa_conv'
-    context.user_data["conversation_state"] = "qa_conv"
-
 
 async def add_topic(update: Update, context: CallbackContext) -> None:
     """Handles the 'Add Topic' command."""
     query = update.callback_query
     await query.answer()
     if query.data == "add_topic":
+        context.user_data["conversation_state"] = "topic"
         # Initialize question index and data dictionary
         context.user_data[QUESTION_INDEX] = 0
         context.user_data["data"] = {}
@@ -313,6 +361,7 @@ async def add_topic(update: Update, context: CallbackContext) -> None:
             chat_id=query.message.chat_id, text="What nickname or name should I use to address you?:"
         )
     elif query.data == CONFIRM_DATA:
+        context.user_data["conversation_state"] = "qa_conv"
         await get_data_from_user(update, context)
 
     elif query.data == EDIT_DATA:
@@ -350,30 +399,6 @@ async def exit_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await start_cmd_from_user(update, context)
 
 
-async def qa_conversation_handler(update: Update, context: CallbackContext) -> None:
-    """
-    Handles the QA conversation state, generating responses using GPT.
-    """
-    chat_id = update.message.chat_id
-    user_message = update.message.text
-
-    # Check if the user wants to exit the conversation
-    if user_message.lower() == "/exit":
-        await exit_chat(update, context)
-        return
-
-    # Check if the conversation state is 'qa_conv'
-    if context.user_data.get('conversation_state') == 'qa_conv':
-        # Generate a response using GPT
-        context.user_data.setdefault('chat_history', []).append({"role": "user", "content": user_message})
-        response = await generate_chat_completion(context.user_data['data'])
-        context.user_data['chat_history'].append({"role": "assistant", "content": response})
-
-        # Send the response to the user
-        await context.bot.send_message(chat_id=chat_id, text=response)
-    else:
-        # If the state is not 'qa_conv', do not handle the message here
-        return
 
 
 # Creating handlers
@@ -385,9 +410,9 @@ start_cmd_from_user_handler: CommandHandler = CommandHandler(command="start", ca
 help_cmd_handler: CommandHandler = CommandHandler(command="help", callback=help_cmd)
 exit_cmd_handler: CommandHandler = CommandHandler(command="exit", callback=exit_chat)
 
+qa_conv_handler: MessageHandler = MessageHandler(filters.TEXT & ~filters.COMMAND, qa_conversation_handler)
+
 button_handler: CallbackQueryHandler = CallbackQueryHandler(add_topic)
 add_topic_handler: MessageHandler = MessageHandler(
     filters.TEXT & ~filters.COMMAND, send_question
 )
-
-qa_conv_handler: MessageHandler = MessageHandler(filters.TEXT & ~filters.COMMAND, qa_conversation_handler)

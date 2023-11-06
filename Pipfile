@@ -22,6 +22,9 @@ sendgrid = "*"
 cloudscraper = "*"
 psycopg2 = "*"
 python-telegram-bot = {extras = ["job-queue"], version = "*"}
+chromadb = "*"
+google-search-results = "*"
+fake-useragent = "*"
 
 [requires]
 python_version = "3.11"

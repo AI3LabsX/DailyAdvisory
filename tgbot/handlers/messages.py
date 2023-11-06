@@ -9,23 +9,118 @@ Note:
     where a tuple of HANDLERS is assembled for further registration in the application
 """
 import asyncio
+import os
 from typing import Any
 
 import openai
 import tiktoken
+from langchain.chains import ConversationChain, RetrievalQAWithSourcesChain
+from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings
+from langchain.llms.openai import OpenAI
+from langchain.memory import ConversationEntityMemory
+from langchain.memory.prompt import ENTITY_MEMORY_CONVERSATION_TEMPLATE
+from langchain.retrievers import WebResearchRetriever
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.tools import Tool
+from langchain.utilities import GoogleSearchAPIWrapper
 from langchain.utilities.google_search import GoogleSearchAPIWrapper
 from langchain.vectorstores import FAISS
+from langchain.vectorstores.chroma import Chroma
 
 from tgbot.utils.environment import env
 
+GOOGLE_CSE_ID = os.environ["GOOGLE_CSE_ID"]
+GOOGLE_API_KEY = os.environ["GOOGLE_API_KEY"]
 openai.api_key = env.get_openai_api()
 
 
+def init_conversation():
+    """
+    Initialize a conversation for a given chat_id.
+    """
+    llm = ChatOpenAI(temperature=0)  # Assuming OpenAI has an async interface
+    conversation = ConversationChain(
+        llm=llm,
+        prompt=ENTITY_MEMORY_CONVERSATION_TEMPLATE,
+        memory=ConversationEntityMemory(llm=llm, k=10)  # Assuming ConversationEntityMemory has an async interface
+    )
+    return conversation
+    # vectorstore = Chroma(
+    #     embedding_function=OpenAIEmbeddings(), persist_directory="./chroma_db_oai"
+    # )
+    # search = GoogleSearchAPIWrapper()
+    # web_research_retriever = WebResearchRetriever.from_llm(
+    #     vectorstore=vectorstore,
+    #     llm=llm,
+    #     search=search,
+    # )
+    # qa_chain = RetrievalQAWithSourcesChain.from_chain_type(
+    #     llm, retriever=web_research_retriever
+    # )
+    # return qa_chain
+
+
+llm = init_conversation()
+prompt_template_male = """
+Character: John, analytical and curious, often tackles {user_topic}-related challenges methodically.
+Occupation & Background: [Derived from {user_topic}]
+"""
+
+prompt_template_female = """
+Character: Jane, creative and empathetic, addresses {user_topic} issues with innovative, human-centered solutions.
+Occupation & Background: [Derived from {user_topic}]
+"""
+personality = {
+    "Male": prompt_template_male,
+    "Female": prompt_template_female
+}
+
+
+async def get_conversation(user_data, query):
+    """
+    Get the conversation output for a given chat_id and query.
+    """
+    # Initialize the conversation if it doesn't exist for the chat_id
+    # Choose the correct prompt based on the persona
+    selected_prompt = personality[user_data["PERSONA"]] if user_data["PERSONA"] in personality else None
+    google_search = search_token(f"{query}. Topic: {user_data['TOPIC']}")
+    # Run the conversation and get the output
+    prompt = f"""
+    As the Daily Advisor AI, your role is to be a knowledgeable and friendly companion to {user_data["NAME"]}. 
+    You're tasked with providing accurate, reliable answers about {user_data["TOPIC"]}—a topic described as 
+    {user_data["DESCRIPTION"]}. Your responses should be grounded in verifiable facts to ensure trustworthiness.
+
+    Embody the character traits assigned to you, maintaining this persona consistently to build rapport with the user. 
+    Your character is defined as follows: {selected_prompt.format(user_topic=user_data["TOPIC"])}. 
+
+    Above all, your goal is to support {user_data["NAME"]}'s curiosity and learning about {user_data["TOPIC"]} with 
+    engaging and informative dialogue. You responses have to be professional and cosine. Answer only based on subject 
+    with no additional info.\n
+    
+    Google Search results: {google_search}
+
+    User query: {query}
+    """
+    # response = llm({"question": query})
+    # output = response["answer"]
+    output = await llm.arun(input=prompt)  # Assuming run is an async method
+    return output
+
+
 async def generate_category(topic, description, level):
-    prompt = f"Given the topic '{topic}', a short description '{description}', and the user's level '{level}', identify a specific category for advice."
+
+    prompt = f"""
+    Based on the main topic of '{topic}', which is briefly described as '{description}', and considering the user's 
+    knowledge level of '{level}', generate a list of specific subcategories or areas of interest within this topic. 
+    These subcategories should be relevant and tailored to the user's understanding, providing avenues for deeper 
+    exploration or advice. Think broadly and include various aspects such as technologies, methodologies, applications, 
+    and any other pertinent divisions related to '{topic}'.
+
+    For instance, if the topic is 'AI', potential categories might include 'Machine Learning', 'AI Tools', 'Diffusion Models', 
+    'Language Models', etc. List out similar categories that fit the scope of '{topic}'.
+    """
+
     category = await generate_completion(prompt)
     return category.strip()
 
@@ -37,7 +132,15 @@ async def search_google_for_data(category, topic):
 
 
 async def generate_advice(user_data, google_data):
-    prompt = f"Create an advice based on ypu knowledge, the following user data: {user_data}, and the information gathered from the internet: {google_data}"
+    prompt = f"""
+Given the user's specific interests and needs as outlined in their profile: {user_data}, and incorporating the 
+latest findings and data obtained from recent Google searches: {google_data}, formulate a piece of advice. This 
+advice should be actionable, insightful, and tailored to the user's context. It should leverage the depth of 
+knowledge available within the AI's database as well as the freshness and relevance of the information sourced 
+from the web. Ensure that the guidance provided is coherent, directly applicable to the user's situation, and 
+reflects the most current understanding of the topic at hand.
+"""
+
     advice = await generate_chat_completion(prompt)
     return advice
 
@@ -87,6 +190,33 @@ async def generate_chat_completion(input_data):
             {
                 "role": "user",
                 "content": input_data
+            }
+        ],
+        "temperature": 0,
+        "max_tokens": 500,
+        "top_p": 0.4,
+        "frequency_penalty": 1.5,
+        "presence_penalty": 1
+    }
+    response = await openai.ChatCompletion.acreate(**data)
+
+    responses = response['choices'][0]['message']['content']
+
+    return responses
+
+
+async def generate_chat(input_data, message):
+    data = {
+        "model": "gpt-3.5-turbo-16k",
+        "messages": [
+            {
+                "role": "system",
+                "content": f"You are a chat bot, created to chat with user on its topic: {input_data['TOPIC']}, "
+                           f"for the level: {input_data['LEVEL']}"
+            },
+            {
+                "role": "user",
+                "content": f"User message: {message}"
             }
         ],
         "temperature": 0,
