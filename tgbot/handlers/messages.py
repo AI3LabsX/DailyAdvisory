@@ -84,7 +84,7 @@ async def get_conversation(user_data, query):
     # Initialize the conversation if it doesn't exist for the chat_id
     # Choose the correct prompt based on the persona
     selected_prompt = personality[user_data["PERSONA"]] if user_data["PERSONA"] in personality else None
-    google_search = search_token(f"{query}. Topic: {user_data['TOPIC']}")
+    google_search = await search_token(f"{query}. Topic: {user_data['TOPIC']}")
     # Run the conversation and get the output
     prompt = f"""
     As the Daily Advisor AI, your role is to be a knowledgeable and friendly companion to {user_data["NAME"]}. 
