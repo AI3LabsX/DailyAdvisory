@@ -17,7 +17,6 @@ from tgbot.utils.logger import logger
 
 
 class Environment:
-
     @staticmethod
     def _get_env_var(var_name: str) -> str:
         value = os.environ.get(var_name)
@@ -39,11 +38,15 @@ class Environment:
         return self._get_env_var("GOOGLE_API_KEY")
 
     def get_admin_ids_or_exit(self) -> tuple[int, ...]:
-        admin_ids_str = self._get_env_var("ADMINS")  # Assuming BOT_ADMINS is the environment variable name
+        admin_ids_str = self._get_env_var(
+            "ADMINS"
+        )  # Assuming BOT_ADMINS is the environment variable name
         try:
-            return tuple(map(int, admin_ids_str.split(',')))
+            return tuple(map(int, admin_ids_str.split(",")))
         except ValueError:
-            logger.critical("Invalid format for BOT_ADMINS. It should be a comma-separated list of integers.")
+            logger.critical(
+                "Invalid format for BOT_ADMINS. It should be a comma-separated list of integers."
+            )
             sys_exit(1)
 
 

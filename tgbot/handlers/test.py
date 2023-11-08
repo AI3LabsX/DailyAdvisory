@@ -5,13 +5,19 @@ import os
 
 torch.cuda.empty_cache()
 
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:200'
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:200"
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     start_time = time.time()
-    tokenizer = AutoTokenizer.from_pretrained("THUDM/codegeex2-6b", trust_remote_code=True)
-    model = AutoModel.from_pretrained("THUDM/codegeex2-6b", trust_remote_code=True, low_cpu_mem_usage=True,
-                                      device="cuda")
+    tokenizer = AutoTokenizer.from_pretrained(
+        "THUDM/codegeex2-6b", trust_remote_code=True
+    )
+    model = AutoModel.from_pretrained(
+        "THUDM/codegeex2-6b",
+        trust_remote_code=True,
+        low_cpu_mem_usage=True,
+        device="cuda",
+    )
     model = model.eval()
 
     # remember adding a language tag for better performance

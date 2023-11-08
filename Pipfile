@@ -25,7 +25,12 @@ python-telegram-bot = {extras = ["job-queue"], version = "*"}
 chromadb = "*"
 google-search-results = "*"
 fake-useragent = "*"
+black = "==23.10.0"
 
 [requires]
 python_version = "3.11"
 python_full_version = "3.11.6"
+
+[scripts]
+lint = "flake8"
+black = "black ."

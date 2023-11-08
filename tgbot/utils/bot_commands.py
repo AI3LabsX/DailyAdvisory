@@ -14,8 +14,7 @@ async def set_default_commands(application: Application) -> None:
         BotCommand(command="start", description="▶️ Starts the bot"),
         BotCommand(command="help", description="ℹ️ Bot info"),
         BotCommand(command="exit", description="ℹ️ Exit from ChatBot to Menu"),
-
-
     ]
-    await application.bot.set_my_commands(commands=commands, scope=None, language_code=None)
-
+    await application.bot.set_my_commands(
+        commands=commands, scope=None, language_code=None
+    )
