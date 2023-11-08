@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "aa24503c202c125baf70bde3f57a4501d3068f52f23304aad5d00a856b5c3f9a"
+            "sha256": "97c47a36c47684c83a73c3a480dbbcc570ee7e354fce67670ec661aec5a0be28"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -126,6 +126,13 @@
             ],
             "markers": "python_version >= '3.6'",
             "version": "==3.8.6"
+        },
+        "aiolimiter": {
+            "hashes": [
+                "sha256:0b4997961fc58b8df40279e739f9cf0d3e255e63e9a44f64df567a8c17241e24",
+                "sha256:461cf02f82a29347340d031626c92853645c099cb5ff85577b831a7bd21132b5"
+            ],
+            "version": "==1.1.0"
         },
         "aiosignal": {
             "hashes": [
@@ -1888,7 +1895,8 @@
         },
         "python-telegram-bot": {
             "extras": [
-                "job-queue"
+                "job-queue",
+                "rate-limiter"
             ],
             "hashes": [
                 "sha256:be8ebda350fd0c69c3ebdd7ce87b1e6f8b3fb1d218a193dd821d1d6285b9f649",
