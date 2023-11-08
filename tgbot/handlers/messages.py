@@ -22,7 +22,6 @@ from langchain.memory.prompt import ENTITY_MEMORY_CONVERSATION_TEMPLATE
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.tools import Tool
 from langchain.utilities import GoogleSearchAPIWrapper
-from langchain.utilities.google_search import GoogleSearchAPIWrapper
 from langchain.vectorstores import FAISS
 
 from tgbot.utils.environment import env
@@ -96,8 +95,7 @@ async def get_conversation(user_data, query):
 
     Above all, your goal is to support {user_data["NAME"]}'s curiosity and learning about {user_data["TOPIC"]} with 
     engaging and informative dialogue. You responses have to be professional and cosine. Answer only based on subject 
-    with no additional info.\n
-    
+    with no additional info.\n    
     Google Search results: {google_search}
 
     User query: {query}
@@ -183,8 +181,8 @@ async def generate_chat_completion(input_data):
             {
                 "role": "system",
                 "content": "You will be given a task by user to create advices on some topic based on you train data "
-                "and given google search data. You have to generate good structured advice text for "
-                "telegram format. ",
+                           "and given google search data. You have to generate good structured advice text for "
+                           "telegram format. ",
             },
             {"role": "user", "content": input_data},
         ],
@@ -208,7 +206,7 @@ async def generate_chat(input_data, message):
             {
                 "role": "system",
                 "content": f"You are a chat bot, created to chat with user on its topic: {input_data['TOPIC']}, "
-                f"for the level: {input_data['LEVEL']}",
+                           f"for the level: {input_data['LEVEL']}",
             },
             {"role": "user", "content": f"User message: {message}"},
         ],
@@ -243,7 +241,7 @@ async def generate_completion(query: str) -> str:
 
 
 def ask_question(qa, question: str, chat_history):
-    query = f""
+    query = ""
 
     result = qa({"question": query, "chat_history": chat_history})
     print(result)
@@ -265,8 +263,8 @@ async def generate_response(query: str, vectorstore) -> str:
         model="gpt-4",
         messages=[
             {"role": "system", "content": ()},
-            {"role": "system", "content": f""},
-            {"role": "user", "content": f" "},
+            {"role": "system", "content": ""},
+            {"role": "user", "content": " "},
         ],
         temperature=0,
         max_tokens=3000,
