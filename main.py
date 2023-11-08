@@ -19,6 +19,17 @@ async def on_startup(application: Application) -> None:
     await set_default_commands(application=application)
 
 
+# def install_playwright_browsers():
+#     """Install Playwright browsers using subprocess."""
+#     try:
+#         logger.info("Installing Playwright browsers...")
+#         subprocess.run(["playwright", "install"], check=True)
+#         logger.info("Playwright browsers installed successfully.")
+#     except subprocess.CalledProcessError:
+#         logger.critical("Failed to install Playwright browsers.")
+#         raise
+
+
 def register_all_handlers(application: Application) -> None:
     """Registers handlers"""
     application.add_handlers(handlers=HANDLERS)  # type: ignore
