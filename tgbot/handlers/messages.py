@@ -14,19 +14,15 @@ from typing import Any
 
 import openai
 import tiktoken
-from langchain.chains import ConversationChain, RetrievalQAWithSourcesChain
+from langchain.chains import ConversationChain
 from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.llms.openai import OpenAI
 from langchain.memory import ConversationEntityMemory
 from langchain.memory.prompt import ENTITY_MEMORY_CONVERSATION_TEMPLATE
-from langchain.retrievers import WebResearchRetriever
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.tools import Tool
 from langchain.utilities import GoogleSearchAPIWrapper
-from langchain.utilities.google_search import GoogleSearchAPIWrapper
 from langchain.vectorstores import FAISS
-from langchain.vectorstores.chroma import Chroma
 
 from tgbot.utils.environment import env
 
@@ -43,7 +39,9 @@ def init_conversation():
     conversation = ConversationChain(
         llm=llm,
         prompt=ENTITY_MEMORY_CONVERSATION_TEMPLATE,
-        memory=ConversationEntityMemory(llm=llm, k=10)  # Assuming ConversationEntityMemory has an async interface
+        memory=ConversationEntityMemory(
+            llm=llm, k=10
+        ),  # Assuming ConversationEntityMemory has an async interface
     )
     return conversation
     # vectorstore = Chroma(
@@ -71,10 +69,7 @@ prompt_template_female = """
 Character: Jane, creative and empathetic, addresses {user_topic} issues with innovative, human-centered solutions.
 Occupation & Background: [Derived from {user_topic}]
 """
-personality = {
-    "Male": prompt_template_male,
-    "Female": prompt_template_female
-}
+personality = {"Male": prompt_template_male, "Female": prompt_template_female}
 
 
 async def get_conversation(user_data, query):
@@ -83,8 +78,12 @@ async def get_conversation(user_data, query):
     """
     # Initialize the conversation if it doesn't exist for the chat_id
     # Choose the correct prompt based on the persona
-    selected_prompt = personality[user_data["PERSONA"]] if user_data["PERSONA"] in personality else None
-    google_search = search_token(f"{query}. Topic: {user_data['TOPIC']}")
+    selected_prompt = (
+        personality[user_data["PERSONA"]]
+        if user_data["PERSONA"] in personality
+        else None
+    )
+    google_search = await search_token(f"{query}. Topic: {user_data['TOPIC']}")
     # Run the conversation and get the output
     prompt = f"""
     As the Daily Advisor AI, your role is to be a knowledgeable and friendly companion to {user_data["NAME"]}. 
@@ -96,8 +95,7 @@ async def get_conversation(user_data, query):
 
     Above all, your goal is to support {user_data["NAME"]}'s curiosity and learning about {user_data["TOPIC"]} with 
     engaging and informative dialogue. You responses have to be professional and cosine. Answer only based on subject 
-    with no additional info.\n
-    
+    with no additional info.\n    
     Google Search results: {google_search}
 
     User query: {query}
@@ -109,7 +107,6 @@ async def get_conversation(user_data, query):
 
 
 async def generate_category(topic, description, level):
-
     prompt = f"""
     Based on the main topic of '{topic}', which is briefly described as '{description}', and considering the user's 
     knowledge level of '{level}', generate a list of specific subcategories or areas of interest within this topic. 
@@ -157,7 +154,7 @@ async def create_advice(topic, description, level):
         "topic": topic,
         "description": description,
         "level": level,
-        "category": category
+        "category": category,
     }
     advice = await generate_advice(user_data, google_data)
 
@@ -185,22 +182,19 @@ async def generate_chat_completion(input_data):
                 "role": "system",
                 "content": "You will be given a task by user to create advices on some topic based on you train data "
                            "and given google search data. You have to generate good structured advice text for "
-                           "telegram format. "
+                           "telegram format. ",
             },
-            {
-                "role": "user",
-                "content": input_data
-            }
+            {"role": "user", "content": input_data},
         ],
         "temperature": 0,
         "max_tokens": 500,
         "top_p": 0.4,
         "frequency_penalty": 1.5,
-        "presence_penalty": 1
+        "presence_penalty": 1,
     }
     response = await openai.ChatCompletion.acreate(**data)
 
-    responses = response['choices'][0]['message']['content']
+    responses = response["choices"][0]["message"]["content"]
 
     return responses
 
@@ -212,22 +206,19 @@ async def generate_chat(input_data, message):
             {
                 "role": "system",
                 "content": f"You are a chat bot, created to chat with user on its topic: {input_data['TOPIC']}, "
-                           f"for the level: {input_data['LEVEL']}"
+                           f"for the level: {input_data['LEVEL']}",
             },
-            {
-                "role": "user",
-                "content": f"User message: {message}"
-            }
+            {"role": "user", "content": f"User message: {message}"},
         ],
         "temperature": 0,
         "max_tokens": 500,
         "top_p": 0.4,
         "frequency_penalty": 1.5,
-        "presence_penalty": 1
+        "presence_penalty": 1,
     }
     response = await openai.ChatCompletion.acreate(**data)
 
-    responses = response['choices'][0]['message']['content']
+    responses = response["choices"][0]["message"]["content"]
 
     return responses
 
@@ -241,16 +232,16 @@ async def generate_completion(query: str) -> str:
         "top_p": 0,
         "frequency_penalty": 0.43,
         "presence_penalty": 0.35,
-        "best_of": 2
+        "best_of": 2,
     }
     response = await openai.Completion.acreate(**data)
     # Extract the bot's response from the generated text
-    answer = response['choices'][0]['text']
+    answer = response["choices"][0]["text"]
     return answer
 
 
 def ask_question(qa, question: str, chat_history):
-    query = f""
+    query = ""
 
     result = qa({"question": query, "chat_history": chat_history})
     print(result)
@@ -271,36 +262,23 @@ async def generate_response(query: str, vectorstore) -> str:
     response = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
-            {
-                "role": "system",
-                "content": ()
-            },
-            {
-                "role": "system",
-                "content": f""
-            },
-            {
-                "role": "user",
-                "content": f" "
-            }
+            {"role": "system", "content": ()},
+            {"role": "system", "content": ""},
+            {"role": "user", "content": " "},
         ],
-
         temperature=0,
         max_tokens=3000,
         top_p=0.4,
         frequency_penalty=1.5,
-        presence_penalty=1
+        presence_penalty=1,
     )
-    bot_response = response['choices'][0]['message']['content']
+    bot_response = response["choices"][0]["message"]["content"]
     return bot_response
 
 
 def tiktoken_len(text: str) -> int:
-    tokenizer = tiktoken.get_encoding('cl100k_base')
-    tokens = tokenizer.encode(
-        text,
-        disallowed_special=()
-    )
+    tokenizer = tiktoken.get_encoding("cl100k_base")
+    tokens = tokenizer.encode(text, disallowed_special=())
     return len(tokens)
 
 
@@ -309,7 +287,7 @@ def process_recursive(documents) -> FAISS:
         chunk_size=900,
         chunk_overlap=200,
         length_function=tiktoken_len,
-        separators=['\n\n', '\n', ' ', '']
+        separators=["\n\n", "\n", " ", ""],
     )
     embeddings = OpenAIEmbeddings()
     text_chunks = text_splitter.split_text(documents)

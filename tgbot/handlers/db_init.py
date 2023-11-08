@@ -1,5 +1,4 @@
 import os
-import sqlite3
 
 import psycopg2
 
@@ -9,10 +8,11 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 
 
 def init_db():
-    conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+    conn = psycopg2.connect(DATABASE_URL, sslmode="require")
     with conn.cursor() as cursor:
         # Create a table to store user data
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS user_data (
                 user_id INTEGER PRIMARY KEY,
                 name TEXT,
@@ -22,7 +22,8 @@ def init_db():
                 persona TEXT,
                 level TEXT
             )
-        """)
+        """
+        )
 
     conn.commit()
     logger.info("Database initialized and table created if not exists.")
@@ -51,11 +52,12 @@ def store_user_data(user_id, data):
     """
 
     # Connect to the PostgreSQL database
-    conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+    conn = psycopg2.connect(DATABASE_URL, sslmode="require")
 
     with conn.cursor() as cursor:
         # Perform an UPSERT operation: insert new data or update existing data based on user_id
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO user_data (user_id, name, topic, description, frequency, persona, level)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (user_id) DO UPDATE 
@@ -65,9 +67,17 @@ def store_user_data(user_id, data):
                 frequency = EXCLUDED.frequency,
                 persona = EXCLUDED.persona,
                 level = EXCLUDED.level
-        """, (
-            user_id, data["NAME"], data["TOPIC"], data["DESCRIPTION"], data["FREQUENCY"], data["PERSONA"],
-            data["LEVEL"]))
+        """,
+            (
+                user_id,
+                data["NAME"],
+                data["TOPIC"],
+                data["DESCRIPTION"],
+                data["FREQUENCY"],
+                data["PERSONA"],
+                data["LEVEL"],
+            ),
+        )
 
     # Commit the transaction and close the database connection
     conn.commit()
@@ -78,12 +88,15 @@ def get_user_preferences(user_id):
     """
     Retrieves user preferences from the database based on user_id.
     """
-    conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+    conn = psycopg2.connect(DATABASE_URL, sslmode="require")
     cursor = conn.cursor()
     try:
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT name, topic, description, frequency, persona, level FROM user_data WHERE user_id = %s
-        """, (user_id,))  # Use %s as the placeholder
+        """,
+            (user_id,),
+        )  # Use %s as the placeholder
 
         user_preferences = cursor.fetchone()
 
@@ -94,7 +107,7 @@ def get_user_preferences(user_id):
                 "DESCRIPTION": user_preferences[2],
                 "FREQUENCY": user_preferences[3],
                 "PERSONA": user_preferences[4],
-                "LEVEL": user_preferences[5]
+                "LEVEL": user_preferences[5],
             }
         else:
             return None

@@ -42,8 +42,12 @@ class RenderTemplate:
         :param path_to_templates: path to the folder with templates
         :type path_to_templates: str
         """
-        self._template_loader: FileSystemLoader = FileSystemLoader(searchpath=path_to_templates)
-        self._env: Environment = Environment(loader=self._template_loader, enable_async=True)
+        self._template_loader: FileSystemLoader = FileSystemLoader(
+            searchpath=path_to_templates
+        )
+        self._env: Environment = Environment(
+            loader=self._template_loader, enable_async=True
+        )
 
     async def render(self, template_name: str, data: dict | None = None) -> str:
         """
@@ -61,7 +65,9 @@ class RenderTemplate:
         try:
             return await self._env.get_template(name=template_name).render_async(**data)
         except TemplateNotFound as exc:
-            logger.error("Template %s for render not found: %s", template_name, repr(exc))
+            logger.error(
+                "Template %s for render not found: %s", template_name, repr(exc)
+            )
             return "❌ Answer template not found!"
 
 
