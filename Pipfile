@@ -21,7 +21,7 @@ duckduckgo-search = "*"
 sendgrid = "*"
 cloudscraper = "*"
 psycopg2 = "*"
-python-telegram-bot = {extras = ["job-queue"], version = "*"}
+python-telegram-bot = {extras = ["job-queue", "rate-limiter"], version = "*"}
 chromadb = "*"
 google-search-results = "*"
 fake-useragent = "*"
