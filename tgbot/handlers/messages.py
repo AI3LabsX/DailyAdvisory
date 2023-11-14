@@ -12,6 +12,7 @@ import asyncio
 import os
 from typing import Any
 
+import httpx
 import openai
 import tiktoken
 from langchain.chains import ConversationChain
@@ -60,50 +61,53 @@ def init_conversation():
 
 
 llm = init_conversation()
-prompt_template_male = """
-Character: John, analytical and curious, often tackles {user_topic}-related challenges methodically.
-Occupation & Background: [Derived from {user_topic}]
-"""
-
-prompt_template_female = """
-Character: Jane, creative and empathetic, addresses {user_topic} issues with innovative, human-centered solutions.
-Occupation & Background: [Derived from {user_topic}]
-"""
-personality = {"Male": prompt_template_male, "Female": prompt_template_female}
 
 
-async def get_conversation(user_data, query):
-    """
-    Get the conversation output for a given chat_id and query.
-    """
-    # Initialize the conversation if it doesn't exist for the chat_id
-    # Choose the correct prompt based on the persona
-    selected_prompt = (
-        personality[user_data["PERSONA"]]
-        if user_data["PERSONA"] in personality
-        else None
-    )
+def truncate_to_word_limit(text: str, word_limit: int) -> str:
+    words = text.split()
+    return ' '.join(words[:word_limit])
+
+
+# TODO: Fix
+async def search_google_async(query: str, result_limit: int = 5) -> Any:
+    # Replace with your actual Google Custom Search Engine ID and API key
+
+    # Ensure the result_limit is within the allowed range (1 to 10)
+    result_limit = max(1, min(result_limit, 10))
+
+    # Construct the search URL with the num parameter
+    search_url = f"https://www.googleapis.com/customsearch/v1?key={GOOGLE_API_KEY}&cx={GOOGLE_CSE_ID}&q={query}&num={result_limit}"
+
+    # Perform the search using httpx
+    async with httpx.AsyncClient() as client:
+        response = await client.get(search_url)
+        response.raise_for_status()  # Raise an exception for HTTP error responses
+        results = response.json()  # Parse the JSON response
+        # Extract titles and snippets
+        extracted_data = [
+            {'title': item['title'], 'snippet': item['snippet']}
+            for item in results.get('items', [])
+        ]
+
+        return extracted_data  # Return the extracted data
+
+
+async def get_conversation(user_data, query, chat_history_buffer):
     google_search = await search_token(f"{query}. Topic: {user_data['TOPIC']}")
-    # Run the conversation and get the output
+    print(google_search)
     prompt = f"""
     As the Daily Advisor AI, your role is to be a knowledgeable and friendly companion to {user_data["NAME"]}. 
-    You're tasked with providing accurate, reliable answers about {user_data["TOPIC"]}—a topic described as 
+    You're tasked with providing accurate, reliable answers about Topic: {user_data["TOPIC"]}—a topic described as 
     {user_data["DESCRIPTION"]}. Your responses should be grounded in verifiable facts to ensure trustworthiness.
-
-    Embody the character traits assigned to you, maintaining this persona consistently to build rapport with the user. 
-    Your character is defined as follows: {selected_prompt.format(user_topic=user_data["TOPIC"])}. 
-
     Above all, your goal is to support {user_data["NAME"]}'s curiosity and learning about {user_data["TOPIC"]} with 
     engaging and informative dialogue. You responses have to be professional and cosine. Answer only based on subject 
     with no additional info.\n    
-    Google Search results: {google_search}
-
+    Google Search results: {google_search}\n
+    Previous History: {chat_history_buffer}
     User query: {query}
     """
-    # response = llm({"question": query})
-    # output = response["answer"]
-    output = await llm.arun(input=prompt)  # Assuming run is an async method
-    return output
+    response = await generate_completion(prompt)
+    return response
 
 
 async def generate_category(topic, description, level):
@@ -137,7 +141,6 @@ knowledge available within the AI's database as well as the freshness and releva
 from the web. Ensure that the guidance provided is coherent, directly applicable to the user's situation, and 
 reflects the most current understanding of the topic at hand.
 """
-
     advice = await generate_chat_completion(prompt)
     return advice
 
@@ -199,30 +202,6 @@ async def generate_chat_completion(input_data):
     return responses
 
 
-async def generate_chat(input_data, message):
-    data = {
-        "model": "gpt-3.5-turbo-16k",
-        "messages": [
-            {
-                "role": "system",
-                "content": f"You are a chat bot, created to chat with user on its topic: {input_data['TOPIC']}, "
-                           f"for the level: {input_data['LEVEL']}",
-            },
-            {"role": "user", "content": f"User message: {message}"},
-        ],
-        "temperature": 0,
-        "max_tokens": 500,
-        "top_p": 0.4,
-        "frequency_penalty": 1.5,
-        "presence_penalty": 1,
-    }
-    response = await openai.ChatCompletion.acreate(**data)
-
-    responses = response["choices"][0]["message"]["content"]
-
-    return responses
-
-
 async def generate_completion(query: str) -> str:
     data = {
         "engine": "text-davinci-003",
@@ -238,65 +217,3 @@ async def generate_completion(query: str) -> str:
     # Extract the bot's response from the generated text
     answer = response["choices"][0]["text"]
     return answer
-
-
-def ask_question(qa, question: str, chat_history):
-    query = ""
-
-    result = qa({"question": query, "chat_history": chat_history})
-    print(result)
-    print("Question:", question)
-    print("Answer:", result["answer"])
-
-    print(result)
-
-    return result["answer"]
-
-
-async def generate_response(query: str, vectorstore) -> str:
-    knowledge = []
-    # TODO: Test different things like similarity
-    for doc in vectorstore.max_marginal_relevance_search(query, k=10):
-        knowledge.append(doc)
-
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": ()},
-            {"role": "system", "content": ""},
-            {"role": "user", "content": " "},
-        ],
-        temperature=0,
-        max_tokens=3000,
-        top_p=0.4,
-        frequency_penalty=1.5,
-        presence_penalty=1,
-    )
-    bot_response = response["choices"][0]["message"]["content"]
-    return bot_response
-
-
-def tiktoken_len(text: str) -> int:
-    tokenizer = tiktoken.get_encoding("cl100k_base")
-    tokens = tokenizer.encode(text, disallowed_special=())
-    return len(tokens)
-
-
-def process_recursive(documents) -> FAISS:
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=900,
-        chunk_overlap=200,
-        length_function=tiktoken_len,
-        separators=["\n\n", "\n", " ", ""],
-    )
-    embeddings = OpenAIEmbeddings()
-    text_chunks = text_splitter.split_text(documents)
-    db = FAISS.from_texts(texts=text_chunks, embedding=embeddings)
-    return db
-
-
-# Create a vector store indexes from the pdfs
-def get_vectorstore(text_chunks: list[str]) -> FAISS:
-    embeddings = OpenAIEmbeddings()
-    vectorstore = FAISS.from_texts(texts=text_chunks, embedding=embeddings)
-    return vectorstore

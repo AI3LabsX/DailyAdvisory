@@ -12,6 +12,7 @@ Note:
 """
 import asyncio
 import time
+from collections import deque
 
 # TODO: Do a data collection like in WeList bot
 #   Fix bug (during first round level is not set correctly (NA)
@@ -238,6 +239,7 @@ async def qa_conversation_handler(update: Update, context: CallbackContext) -> N
     """
     Handles the QA conversation state, generating responses using GPT.
     """
+    chat_history_buffer: deque = deque(maxlen=5)
     chat_id = update.message.chat_id
     user_id = (
         update.message.from_user.id
@@ -258,7 +260,9 @@ async def qa_conversation_handler(update: Update, context: CallbackContext) -> N
         context.user_data.setdefault("chat_history", []).append(
             {"role": "user", "content": user_message}
         )
-        response = await get_conversation(user_preferences, user_message)
+
+        response = await get_conversation(user_preferences, user_message, chat_history_buffer)
+        chat_history_buffer.append({user_message: response})
         context.user_data["chat_history"].append(
             {"role": "assistant", "content": response}
         )
@@ -306,9 +310,9 @@ async def qa_conversation_handler(update: Update, context: CallbackContext) -> N
             await display_summary(update, context)
             return
         if (
-            update.message
-            and 0 <= question_index < len(KEYS)
-            and context.user_data["conversation_state"] == "topic"
+                update.message
+                and 0 <= question_index < len(KEYS)
+                and context.user_data["conversation_state"] == "topic"
         ):
             context.user_data["data"][KEYS[question_index]] = update.message.text
         # Check if we've asked all questions
@@ -397,8 +401,8 @@ async def get_data_from_user(update, context):
     # Send a message to the user with further instructions
     message = (
         f"Now, advice will come to you with a frequency of {data['FREQUENCY']} times per day.\n"
-        "To ask a question about the topic, use the command `/ask`.\n"
-        "To get a random piece of advice on the topic, use the command `/advice`."
+        "<b>Chat Mode activated!</b>\n"
+        "Now you can write to the Chat anything you want to ask about you topic."
     )
     await context.bot.send_message(chat_id, message)
 
